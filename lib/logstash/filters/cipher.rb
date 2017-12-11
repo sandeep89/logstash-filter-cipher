@@ -131,13 +131,12 @@ class LogStash::Filters::Cipher < LogStash::Filters::Base
     begin
       hash = event.to_hash
       hash.each_key do |field|
-        data = event.get(@field)
         next unless !@whitelist_fields.include?(field)
         if (event.get(@field).nil? || event.get(@field).empty?)
           @logger.debug("Event to filter, event 'source' field: " + @field + " was null(nil) or blank, doing nothing")
           return
         end
-
+        data = event.get(@field)
         if @mode == "encrypt"
           @random_iv = OpenSSL::Random.random_bytes(@iv_random_length)
         end

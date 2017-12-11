@@ -115,6 +115,8 @@ class LogStash::Filters::Cipher < LogStash::Filters::Base
   #     filter { cipher { max_cipher_reuse => 1000 }}
   config :max_cipher_reuse, :validate => :number, :default => 1
 
+  # A compulsory field which is a list of all the attributes which we want to 
+  # keep unhashed
   config :whitelist_fields, :validate => :array, :required => true
 
   def register
@@ -132,11 +134,9 @@ class LogStash::Filters::Cipher < LogStash::Filters::Base
       hash = event.to_hash
       hash.each_key do |field|
         next unless !@whitelist_fields.include?(field)
-        if (event.get(@field).nil? || event.get(@field).empty?)
-          @logger.debug("Event to filter, event 'source' field: " + @field + " was null(nil) or blank, doing nothing")
-          return
-        end
-        data = event.get(@field)
+        next if (event.get(field).nil? || (event.get(field).class == "String" && event.get(field).empty?) || event.get(field).to_s.empty?)
+
+        data = event.get(field)
         if @mode == "encrypt"
           @random_iv = OpenSSL::Random.random_bytes(@iv_random_length)
         end
@@ -160,6 +160,7 @@ class LogStash::Filters::Cipher < LogStash::Filters::Base
           @random_iv = data.byteslice(0,@iv_random_length)
           data = data.byteslice(@iv_random_length..data.length)
         end
+        event.set(field, result)
       end
 
     rescue => e
@@ -173,11 +174,11 @@ class LogStash::Filters::Cipher < LogStash::Filters::Base
 
       result = result.force_encoding("utf-8") if @mode == "decrypt"
 
-      event.set(@target, result)
+      # event.set(@target, result)
 
       #Is it necessary to add 'if !result.nil?' ? exception have been already catched.
       #In doubt, I keep it.
-      filter_matched(event) if !result.nil?
+      # filter_matched(event) if !result.nil?
 
       if !@max_cipher_reuse.nil? and @total_cipher_uses >= @max_cipher_reuse
         @logger.debug("max_cipher_reuse["+@max_cipher_reuse.to_s+"] reached, total_cipher_uses = "+@total_cipher_uses.to_s)

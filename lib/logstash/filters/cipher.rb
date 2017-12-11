@@ -115,6 +115,8 @@ class LogStash::Filters::Cipher < LogStash::Filters::Base
   #     filter { cipher { max_cipher_reuse => 1000 }}
   config :max_cipher_reuse, :validate => :number, :default => 1
 
+  config :whitelist_fields, :validate => :array, :required => true
+
   def register
     require 'base64' if @base64
     init_cipher
@@ -127,36 +129,38 @@ class LogStash::Filters::Cipher < LogStash::Filters::Base
 
     #If decrypt or encrypt fails, we keep it it intact.
     begin
-
-      if (event.get(@source).nil? || event.get(@source).empty?)
-        @logger.debug("Event to filter, event 'source' field: " + @source + " was null(nil) or blank, doing nothing")
-        return
-      end
-
-      #@logger.debug("Event to filter", :event => event)
-      data = event.get(@source)
-      if @mode == "decrypt"
-        data =  Base64.strict_decode64(data) if @base64 == true
-        @random_iv = data.byteslice(0,@iv_random_length)
-        data = data.byteslice(@iv_random_length..data.length)
-      end
-
-      if @mode == "encrypt"
-        @random_iv = OpenSSL::Random.random_bytes(@iv_random_length)
-      end
-
-      @cipher.iv = @random_iv
-
-      result = @cipher.update(data) + @cipher.final
-
-      if @mode == "encrypt"
-
-        # if we have a random_iv, prepend that to the crypted result
-        if !@random_iv.nil?
-          result = @random_iv + result
+      hash = event.to_hash
+      hash.each_key do |field|
+        data = event.get(@field)
+        next unless !@whitelist_fields.include?(field)
+        if (event.get(@field).nil? || event.get(@field).empty?)
+          @logger.debug("Event to filter, event 'source' field: " + @field + " was null(nil) or blank, doing nothing")
+          return
         end
 
-        result =  Base64.strict_encode64(result).encode("utf-8") if @base64 == true
+        if @mode == "encrypt"
+          @random_iv = OpenSSL::Random.random_bytes(@iv_random_length)
+        end
+
+        @cipher.iv = @random_iv
+
+        result = @cipher.update(data) + @cipher.final
+
+        if @mode == "encrypt"
+
+          # if we have a random_iv, prepend that to the crypted result
+          if !@random_iv.nil?
+            result = @random_iv + result
+          end
+
+          result =  Base64.strict_encode64(result).encode("utf-8") if @base64 == true
+        end
+            #@logger.debug("Event to filter", :event => event)
+        if @mode == "decrypt"
+          data =  Base64.strict_decode64(data) if @base64 == true
+          @random_iv = data.byteslice(0,@iv_random_length)
+          data = data.byteslice(@iv_random_length..data.length)
+        end
       end
 
     rescue => e
